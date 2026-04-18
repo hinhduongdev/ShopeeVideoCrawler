@@ -45,12 +45,50 @@ Với mỗi sản phẩm trong danh sách:
 
 ```text
 ShopeeVideoCrawler/
-├── manifest.json   # Cấu hình quyền và các thành phần của Extension
-├── popup.html      # Giao diện người dùng
-├── popup.js        # Xử lý sự kiện click, lắng nghe tiến trình từ background
-├── background.js   # Service Worker: lắng nghe CSV, điều phối mở tab, tải video
-└── content.js      # Tự động click trên trang Shopee Affiliate
+├── manifest.json          # Cấu hình quyền và các thành phần của Extension
+├── popup.html             # Giao diện người dùng
+├── popup.js               # Xử lý sự kiện click, lắng nghe tiến trình từ background
+├── background.js          # Service Worker: lắng nghe CSV, điều phối mở tab, tải video
+├── content.js             # Tự động click trên trang Shopee Affiliate
+├── extractor.js           # Script tự chứa: trích xuất URL video từ trang sản phẩm
+├── obfuscator-config.json # Cấu hình javascript-obfuscator cho bản release
+└── build_demo.bat         # Script build ra bản release đã obfuscate
 ```
+
+## 🔨 Build bản Release (cho khách hàng)
+
+### Yêu cầu
+
+- **Node.js** đã cài đặt (`node -v` để kiểm tra).
+- **javascript-obfuscator** cài qua npm (có trong `package.json`):
+  ```bat
+  npm install
+  ```
+
+### Các bước build
+
+1. Mở Command Prompt hoặc PowerShell trong thư mục `ShopeeVideoCrawler/`.
+2. Chạy:
+   ```bat
+   build_demo.bat
+   ```
+3. Sau khi build xong, thư mục **`ShopeeVideoCrawler_Release\`** sẽ xuất hiện ở cùng cấp với thư mục source (tức là `../ShopeeVideoCrawler_Release/`).
+
+### Nội dung thư mục release
+
+```text
+ShopeeVideoCrawler_Release/
+├── manifest.json    # (copy nguyên gốc)
+├── popup.html       # (copy nguyên gốc)
+├── background.js    # (đã obfuscate)
+├── popup.js         # (đã obfuscate)
+├── content.js       # (đã obfuscate)
+└── extractor.js     # (đã obfuscate)
+```
+
+> **Lưu ý:** Các file `package.json`, `package-lock.json`, `node_modules/`, `obfuscator-config.json` và `build_demo.bat` **không** được đưa vào thư mục release.
+
+## 📦 Cài đặt bản Release lên máy khách hàng
 
 ## ⚙️ Yêu cầu
 
@@ -58,11 +96,15 @@ ShopeeVideoCrawler/
 - Đã đăng nhập tài khoản **Shopee Affiliate** tại `affiliate.shopee.vn`.
 - Đang ở trang **Product Offer** (có danh sách sản phẩm với checkbox và nút "Lấy link hàng loạt").
 
-## 📦 Cài đặt
+## 📦 Cài đặt bản Release lên máy khách hàng
 
-1. Mở `chrome://extensions/`.
-2. Bật **Developer mode**.
-3. Nhấn **Load unpacked** → chọn thư mục `ShopeeVideoCrawler/`.
+1. Sao chép toàn bộ thư mục **`ShopeeVideoCrawler_Release/`** sang máy khách (USB, zip, Google Drive, v.v.).
+2. Trên máy khách, mở trình duyệt Chrome/Edge và truy cập `chrome://extensions/`.
+3. Bật **Developer mode** (góc trên bên phải).
+4. Nhấn **Load unpacked** → chọn thư mục `ShopeeVideoCrawler_Release/`.
+5. Extension sẽ xuất hiện trong danh sách với tên **Shopee Video Crawler**.
+
+> **Lưu ý:** Máy khách **không cần** Node.js hay bất kỳ công cụ build nào. Chỉ cần thư mục release.
 
 ## 📂 Output
 

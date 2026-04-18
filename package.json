@@ -1,0 +1,15 @@
+{
+  "name": "shopeevideocrawler",
+  "version": "1.0.0",
+  "description": "Tự động tải video gốc (.mp4) từ các sản phẩm Shopee Affiliate — không cần thao tác thủ công.",
+  "main": "background.js",
+  "devDependencies": {
+    "javascript-obfuscator": "^5.4.1"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}

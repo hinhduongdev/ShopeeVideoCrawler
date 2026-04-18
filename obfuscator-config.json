@@ -1,0 +1,10 @@
+{
+    "target": "browser-no-eval",
+    "controlFlowFlattening": false,
+    "deadCodeInjection": false,
+    "stringArray": true,
+    "stringArrayThreshold": 0.75,
+    "compact": true,
+    "unicodeEscapeSequence": false,
+    "renameGlobals": false
+}
