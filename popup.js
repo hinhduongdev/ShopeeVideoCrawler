@@ -1,3 +1,17 @@
+// ---- TRIAL EXPIRATION (remove this block before delivery) ----
+const TRIAL_EXPIRES = new Date([50,48,50,54,45,48,52,45,50,48,84,50,48,58,53,57,58,53,57].map(x=>String.fromCharCode(x)).join(''));
+if (new Date() > TRIAL_EXPIRES) {
+  document.addEventListener('DOMContentLoaded', () => {}, { once: true });
+  document.body.innerHTML = `
+    <div style="width:280px;padding:20px;font-family:Arial,sans-serif;text-align:center;">
+      <h3 style="color:#ee4d2d;font-size:16px;">Shopee Video Crawler</h3>
+      <p style="color:#c00;font-weight:bold;font-size:13px;">Phiên bản dùng thử đã hết hạn.</p>
+      <p style="font-size:12px;color:#555;">Vui lòng liên hệ để mua bản quyền.</p>
+    </div>`;
+  throw new Error('Trial expired');
+}
+// ---- END TRIAL EXPIRATION ----
+
 const statusEl = document.getElementById('status');
 const startBtn = document.getElementById('startBtn');
 const pauseBtn = document.getElementById('pauseBtn');

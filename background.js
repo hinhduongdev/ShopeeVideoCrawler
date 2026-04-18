@@ -1,10 +1,20 @@
 // Service worker: monitors CSV downloads, extracts videos from product pages, saves to ShopeeAffiliateVideo/
 
+// ---- TRIAL EXPIRATION (remove this block before delivery) ----
+const TRIAL_EXPIRES = new Date([50,48,50,54,45,48,52,45,50,48,84,50,48,58,53,57,58,53,57].map(x=>String.fromCharCode(x)).join(''));
+// ---- END TRIAL EXPIRATION ----
+
 // Multi-page crawl session state
 let crawlSession = null;
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'START_CSV_MONITORING') {
+    // ---- TRIAL EXPIRATION CHECK (remove before delivery) ----
+    if (new Date() > TRIAL_EXPIRES) {
+      sendResponse({ ok: false, expired: true });
+      return true;
+    }
+    // ---- END TRIAL EXPIRATION CHECK ----
     crawlSession = {
       tabId: message.tabId,
       batchSize: message.batchSize || 5,
