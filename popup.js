@@ -1,45 +1,69 @@
 const statusEl = document.getElementById('status');
+const startBtn = document.getElementById('startBtn');
+const progressWrap = document.getElementById('progressWrap');
+const progressBar = document.getElementById('progressBar');
+const progressLabel = document.getElementById('progressLabel');
+
+function setProgress(current, total) {
+  const pct = total > 0 ? Math.round((current / total) * 100) : 0;
+  progressWrap.style.display = 'block';
+  progressLabel.style.display = 'block';
+  progressBar.style.width = pct + '%';
+  progressLabel.textContent = `${current}/${total} (${pct}%)`;
+}
+
+function resetProgress() {
+  progressWrap.style.display = 'none';
+  progressLabel.style.display = 'none';
+  progressBar.style.width = '0%';
+  progressLabel.textContent = '';
+}
 
 function setStatus(msg) {
   statusEl.textContent = msg;
 }
 
-function disableAll(disabled) {
-  document.querySelectorAll('button').forEach(b => b.disabled = disabled);
-}
-
-async function executeContentScript(mode) {
+startBtn.addEventListener('click', async () => {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
-  if (!tab.url.includes("affiliate.shopee.vn")) {
-    alert("Vui lòng mở trang Shopee Affiliate trước!");
+  if (!tab.url.includes('affiliate.shopee.vn')) {
+    alert('Vui lòng mở trang Shopee Affiliate trước!');
     return;
   }
 
-  disableAll(true);
-  setStatus("Đang crawl dữ liệu...");
+  startBtn.disabled = true;
+  resetProgress();
+  setStatus('Đang chọn sản phẩm & lấy link...');
 
   try {
+    // 1. Tell background to start monitoring for CSV downloads
+    await chrome.runtime.sendMessage({ type: 'START_CSV_MONITORING', tabId: tab.id });
+
+    // 2. Inject content script to automate button clicks
     await chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      func: (crawlMode) => { window.__CRAWL_MODE__ = crawlMode; },
-      args: [mode]
+      files: ['content.js'],
     });
-
-    await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      files: ['content.js']
-    });
-
-    setStatus(mode === 'products'
-      ? "Đang crawl sản phẩm..."
-      : "Đang crawl... Video sẽ mở từng tab sản phẩm. Xem console để theo dõi tiến trình.");
   } catch (err) {
-    setStatus("Lỗi: " + err.message);
-    disableAll(false);
+    setStatus('Lỗi: ' + err.message);
+    startBtn.disabled = false;
   }
-}
+});
 
-document.getElementById('crawlProductsBtn').addEventListener('click', () => executeContentScript('products'));
-document.getElementById('crawlVideosBtn').addEventListener('click', () => executeContentScript('videos'));
-document.getElementById('crawlAllBtn').addEventListener('click', () => executeContentScript('all'));
+// Listen for progress and completion from background
+chrome.runtime.onMessage.addListener((message) => {
+  if (message.type === 'CSV_PARSED') {
+    setStatus(`Tìm thấy ${message.count} sản phẩm. Đang tải video...`);
+  }
+
+  if (message.type === 'CRAWL_PROGRESS') {
+    setStatus(`🎬 ${message.current}/${message.total}: ${message.productName}`);
+    setProgress(message.current, message.total);
+  }
+
+  if (message.type === 'CRAWL_COMPLETE') {
+    setProgress(message.totalProducts, message.totalProducts);
+    setStatus(`Hoàn tất! ${message.totalVideos}/${message.totalProducts} video đã tải vào ShopeeAff.`);
+    startBtn.disabled = false;
+  }
+});

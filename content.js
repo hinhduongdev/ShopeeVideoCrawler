@@ -1,231 +1,120 @@
-(async () => {
-  const MODE = window.__CRAWL_MODE__ || 'all';
-  console.log(`[Shopee Crawler] Starting in mode: ${MODE}`);
+// Content script: automates "Chọn tất cả" + "Lấy link hàng loạt" button clicks
+// CSV download is intercepted by background.js via chrome.downloads API
 
+(async () => {
   const wait = (ms) => new Promise(res => setTimeout(res, ms));
 
-  // --- Utility: scroll to bottom to load all items ---
-  async function scrollToLoadAll() {
-    const scrollTarget = document.documentElement;
-    let prevHeight = 0;
-    let retries = 0;
+  console.log('[Shopee Crawler] Content script started on affiliate page.');
 
-    while (retries < 15) {
-      const currentHeight = scrollTarget.scrollHeight;
-      scrollTarget.scrollTo({ top: currentHeight, behavior: 'smooth' });
-      await wait(1500);
-
-      if (currentHeight === prevHeight) {
-        retries++;
-      } else {
-        retries = 0;
+  // --- Click "Chọn tất cả sản phẩm trên trang này" checkbox ---
+  async function clickSelectAll() {
+    const selectors = [
+      '#batch-bar input[type="checkbox"]',
+    ];
+    for (const sel of selectors) {
+      const el = document.querySelector(sel);
+      if (el) {
+        console.log(`[Shopee Crawler] Clicking select-all via: ${sel}`);
+        el.click();
+        await wait(500);
+        return true;
       }
-      prevHeight = currentHeight;
     }
 
-    scrollTarget.scrollTo({ top: 0 });
-    await wait(500);
-    console.log("[Shopee Crawler] Finished scrolling to load all items.");
+    console.warn('[Shopee Crawler] Could not find "Chọn tất cả" checkbox.');
+    return false;
   }
 
-  // --- Utility: download via background script using chrome.downloads API ---
-  function triggerDownload(filename, content, mimeType) {
-    return new Promise((resolve) => {
-      chrome.runtime.sendMessage({
-        type: 'DOWNLOAD_FILE',
-        filename,
-        content,
-        mimeType,
-      }, (response) => {
-        if (response?.success) {
-          console.log(`[Shopee Crawler] Downloaded ${filename}`);
-        } else {
-          console.error(`[Shopee Crawler] Download failed for ${filename}:`, response?.error);
-        }
-        resolve();
-      });
-    });
-  }
-
-  // --- Utility: download data as CSV ---
-  async function downloadCSV(filename, headers, rows) {
-    const BOM = '\uFEFF';
-    const csvContent = BOM + [
-      headers.join(','),
-      ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
-    ].join('\n');
-
-    await triggerDownload(filename, csvContent, 'text/csv;charset=utf-8;');
-    console.log(`[Shopee Crawler] Downloaded ${filename} with ${rows.length} rows.`);
-  }
-
-  // --- Utility: download data as JSON ---
-  async function downloadJSON(filename, data) {
-    const jsonContent = JSON.stringify(data, null, 2);
-    await triggerDownload(filename, jsonContent, 'application/json;charset=utf-8;');
-  }
-
-  // --- Collect product links from the affiliate listing page ---
-  async function collectProductLinks() {
-    console.log("[Shopee Crawler] Scrolling to load all products...");
-    await scrollToLoadAll();
-
-    const products = [];
-
-    // Collect all affiliate product links from the listing page
-    // These are links to affiliate.shopee.vn product detail pages (NOT shopee.vn)
-    // The a.view-product with real shopee.vn URLs only exists on each detail page
-    const allLinks = document.querySelectorAll('a[href]');
-
-    allLinks.forEach(a => {
-      const href = a.href;
-      // Match affiliate product detail links
-      if (href.includes('affiliate.shopee.vn') && (href.includes('/offer/product') || href.includes('/product/'))) {
-        const card = a.closest('tr, [class*="product"], [class*="offer"], [class*="item"], [class*="card"]') || a.parentElement;
-        const nameEl = card?.querySelector('[class*="name"], [class*="title"], td:first-child') || a;
-        const commissionEl = card?.querySelector('[class*="commission"], [class*="rate"], [class*="percent"]');
-        const priceEl = card?.querySelector('[class*="price"]');
-
-        products.push({
-          name: (nameEl ? nameEl.textContent.trim() : '').substring(0, 200),
-          link: href,
-          commission: commissionEl ? commissionEl.textContent.trim() : '',
-          price: priceEl ? priceEl.textContent.trim() : '',
-        });
+  // --- Click "Lấy link hàng loạt" button ---
+  async function clickGetLinksButton() {
+    const allButtons = document.querySelectorAll('button, a, div[role="button"], span');
+    for (const btn of allButtons) {
+      const text = btn.textContent.trim();
+      if (text.includes('Lấy link hàng loạt') || text.includes('Get links')) {
+        console.log('[Shopee Crawler] Found "Lấy link hàng loạt" button, clicking...');
+        btn.click();
+        return true;
       }
-    });
+    }
 
-    // Fallback: try structured rows/cards
-    if (products.length === 0) {
-      const rows = document.querySelectorAll(
-        'table tbody tr, .product-list .product-item, .offer-list-item, [class*="product-card"], [class*="OfferItem"], [class*="offer-item"]'
+    console.warn('[Shopee Crawler] Could not find "Lấy link hàng loạt" button.');
+    return false;
+  }
+
+  // --- Wait for popup then click "Lấy link" confirm button inside it ---
+  async function clickPopupConfirmButton() {
+    const maxWait = 8000;
+    const interval = 300;
+    let elapsed = 0;
+
+    while (elapsed < maxWait) {
+      await wait(interval);
+      elapsed += interval;
+
+      // Look for a popup/modal/dialog that appeared after clicking "Lấy link hàng loạt"
+      const allButtons = document.querySelectorAll(
+        '[class*="modal"] button, [class*="popup"] button, [class*="dialog"] button, ' +
+        '[role="dialog"] button, [class*="Modal"] button, [class*="Popup"] button'
       );
 
-      rows.forEach(row => {
-        const linkEl = row.querySelector('a[href]');
-        const nameEl = row.querySelector('[class*="name"], [class*="title"], td:first-child') || linkEl;
-        const commissionEl = row.querySelector('[class*="commission"], [class*="rate"], [class*="percent"]');
-        const priceEl = row.querySelector('[class*="price"]');
-
-        if (linkEl && linkEl.href) {
-          products.push({
-            name: (nameEl ? nameEl.textContent.trim() : '').substring(0, 200),
-            link: linkEl.href,
-            commission: commissionEl ? commissionEl.textContent.trim() : '',
-            price: priceEl ? priceEl.textContent.trim() : '',
-          });
+      for (const btn of allButtons) {
+        const text = btn.textContent.trim();
+        // Match the confirm "Lấy link" button but NOT the original "Lấy link hàng loạt" button
+        if (
+          (text === 'Lấy link' || text === 'Xác nhận' || text === 'Confirm' || text === 'OK') &&
+          !text.includes('hàng loạt')
+        ) {
+          console.log(`[Shopee Crawler] Found popup confirm button: "${text}", clicking...`);
+          btn.click();
+          return true;
         }
-      });
+      }
+
+      // Fallback: scan ALL buttons for exact "Lấy link" text in case popup isn't wrapped in a modal class
+      const allBtns = document.querySelectorAll('button');
+      for (const btn of allBtns) {
+        const text = btn.textContent.trim();
+        if (text === 'Lấy link' || text === 'Lấy Link') {
+          console.log(`[Shopee Crawler] Found confirm button via fallback: "${text}", clicking...`);
+          btn.click();
+          return true;
+        }
+      }
     }
 
-    // Deduplicate by link
-    const seen = new Set();
-    const unique = products.filter(p => {
-      if (seen.has(p.link)) return false;
-      seen.add(p.link);
-      return true;
-    });
-
-    console.log(`[Shopee Crawler] Collected ${unique.length} product links.`);
-    return unique;
+    console.warn('[Shopee Crawler] Popup confirm button not found within timeout.');
+    return false;
   }
 
-  // ===== CRAWL PRODUCTS (download product list) =====
-  async function crawlProducts() {
-    const products = await collectProductLinks();
-
-    if (products.length > 0) {
-      await downloadCSV(
-        `shopee_products_${Date.now()}.csv`,
-        ['Name', 'Link', 'Commission', 'Price'],
-        products.map(p => [p.name, p.link, p.commission, p.price || ''])
-      );
-      await downloadJSON(`shopee_products_${Date.now()}.json`, products);
-    } else {
-      alert("[Shopee Crawler] Không tìm thấy sản phẩm nào. Hãy chắc chắn bạn đang ở trang Product Offer.");
-    }
-
-    return products;
-  }
-
-  // ===== CRAWL VIDEOS (visit each product detail page) =====
-  async function crawlVideos(productLinks) {
-    // If no links passed, collect them from the current page
-    if (!productLinks || productLinks.length === 0) {
-      productLinks = await collectProductLinks();
-    }
-
-    if (productLinks.length === 0) {
-      alert("Không tìm thấy link sản phẩm nào để crawl video.");
-      return [];
-    }
-
-    console.log(`[Shopee Crawler] Sending ${productLinks.length} product links to background for video extraction...`);
-    console.log("[Shopee Crawler] Each product page will be opened in a background tab. This may take a while...");
-
-    return new Promise((resolve) => {
-      const listener = async (message) => {
-        if (message.type === 'CRAWL_PROGRESS') {
-          console.log(`[Shopee Crawler] 🎬 Video extraction: ${message.current}/${message.total} — ${message.productName}`);
-        }
-
-        if (message.type === 'VIDEO_CRAWL_RESULTS') {
-          chrome.runtime.onMessage.removeListener(listener);
-
-          const videos = message.videos || [];
-          console.log(`[Shopee Crawler] Video crawl complete! Found ${videos.length} videos across ${productLinks.length} products.`);
-
-          if (videos.length > 0) {
-            await downloadCSV(
-              `shopee_videos_${Date.now()}.csv`,
-              ['Product Name', 'Product Link', 'Video URL', 'Type'],
-              videos.map(v => [v.productName || '', v.productLink || '', v.videoUrl, v.type])
-            );
-            await downloadJSON(`shopee_videos_${Date.now()}.json`, videos);
-          } else {
-            alert("Không tìm thấy video nào trong các trang sản phẩm.");
-          }
-
-          resolve(videos);
-        }
-      };
-
-      chrome.runtime.onMessage.addListener(listener);
-
-      chrome.runtime.sendMessage({
-        type: 'CRAWL_VIDEOS_FROM_PRODUCTS',
-        productLinks: productLinks,
-      });
-    });
-  }
-
-  // ===== MAIN =====
+  // --- Main execution ---
   try {
-    let productResults = [];
-    let videoResults = [];
+    await wait(1000);
 
-    if (MODE === 'products') {
-      productResults = await crawlProducts();
+    const selectedAll = await clickSelectAll();
+    if (!selectedAll) {
+      alert('[Shopee Crawler] Không tìm thấy checkbox "Chọn tất cả sản phẩm". Hãy chắc chắn bạn đang ở đúng trang.');
+      return;
     }
 
-    if (MODE === 'videos') {
-      videoResults = await crawlVideos();
+    await wait(1000);
+
+    const clickedBtn = await clickGetLinksButton();
+    if (!clickedBtn) {
+      alert('[Shopee Crawler] Không tìm thấy nút "Lấy link hàng loạt".');
+      return;
     }
 
-    if (MODE === 'all') {
-      // Crawl products first, then reuse the links for video extraction
-      productResults = await crawlProducts();
-      videoResults = await crawlVideos(productResults);
+    console.log('[Shopee Crawler] Waiting for popup to appear...');
+    const confirmedPopup = await clickPopupConfirmButton();
+    if (!confirmedPopup) {
+      alert('[Shopee Crawler] Không tìm thấy nút "Lấy link" trong popup. Hãy thử click thủ công.');
+      return;
     }
 
-    const total = (productResults?.length || 0) + (videoResults?.length || 0);
-    console.log(`[Shopee Crawler] Done! Total items crawled: ${total}`);
+    console.log('[Shopee Crawler] Popup confirmed. Background is monitoring for CSV download...');
 
-    if (total > 0) {
-      alert(`Crawl hoàn tất!\nSản phẩm: ${productResults?.length || 0}\nVideo: ${videoResults?.length || 0}\nFile CSV & JSON đã được tải xuống.`);
-    }
   } catch (err) {
-    console.error("[Shopee Crawler] Error:", err);
-    alert("Có lỗi xảy ra: " + err.message);
+    console.error('[Shopee Crawler] Error:', err);
+    alert('[Shopee Crawler] Lỗi: ' + err.message);
   }
 })();

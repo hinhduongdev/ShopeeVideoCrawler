@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <style>
     body {
-      width: 260px;
+      width: 280px;
       padding: 15px;
       font-family: Arial, sans-serif;
     }
@@ -40,20 +40,47 @@
       text-align: center;
       min-height: 18px;
     }
-    .btn-secondary {
-      background-color: #4CAF50;
+
+
+
+    #progressWrap {
+      display: none;
+      margin-top: 8px;
+      background: #e0e0e0;
+      border-radius: 4px;
+      height: 10px;
+      overflow: hidden;
     }
-    .btn-secondary:hover {
-      background-color: #388E3C;
+    #progressBar {
+      height: 100%;
+      width: 0%;
+      background: #ee4d2d;
+      border-radius: 4px;
+      transition: width 0.3s ease;
+    }
+    #progressLabel {
+      font-size: 11px;
+      color: #888;
+      text-align: right;
+      margin-top: 2px;
+      display: none;
+    }
+    .info {
+      font-size: 11px;
+      color: #888;
+      text-align: center;
+      margin-bottom: 10px;
+      line-height: 1.4;
     }
   </style>
 </head>
 <body>
-  <h3>Shopee Aff Crawler</h3>
-  <button id="crawlProductsBtn">🛒 Crawl Product Links</button>
-  <button id="crawlVideosBtn" class="btn-secondary">🎬 Crawl Video Links</button>
-  <button id="crawlAllBtn" style="background-color:#1976D2;">📦 Crawl All (Products + Videos)</button>
+  <h3>Shopee Aff Video Crawler</h3>
+  <div class="info">Mở trang Shopee Affiliate → Product Offer, sau đó nhấn nút bên dưới.</div>
+  <button id="startBtn">🎬 Crawl & Tải Video</button>
   <div id="status"></div>
+  <div id="progressWrap"><div id="progressBar"></div></div>
+  <div id="progressLabel"></div>
   <script src="popup.js"></script>
 </body>
 </html>

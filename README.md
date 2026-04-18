@@ -1,53 +1,72 @@
-# Shopee Video & Affiliate Crawler Extension
+# Shopee Affiliate Video Crawler Extension
 
-This tool automates the collection of affiliate product links and extracts original videos from Shopee for content creators (re-uploaders/affiliates).
+Tự động tải video gốc (.mp4) từ các sản phẩm Shopee Affiliate — không cần thao tác thủ công.
 
-## 🚀 Operational Flow
+## 🚀 Luồng hoạt động
 
-Below is a flowchart of the communication between the components in the Extension:
+### Bước 1 — Kích hoạt (Popup)
 
-### Detailed processing steps:
+1. Mở trang **Shopee Affiliate → Product Offer** trên trình duyệt.
+2. Nhấn nút **"🎬 Crawl & Tải Video"** trong popup của extension.
+3. `popup.js` thông báo `background.js` bắt đầu lắng nghe download CSV, sau đó inject `content.js` vào tab hiện tại.
 
-1. **Popup (UI Context):**
+### Bước 2 — Tự động thao tác trên trang (Content Script)
 
-- The user clicks the activation button on the Extension interface.
+`content.js` thực hiện tuần tự:
 
-- `popup.js` sends a `Command` signal to the **Content Script** running in the Shopee Affiliate tab.
+1. Tìm và click checkbox **"Chọn tất cả sản phẩm trên trang này"**.
+2. Tìm và click nút **"Lấy link hàng loạt"**.
+3. Chờ popup xác nhận xuất hiện, sau đó click nút **"Lấy link"** trong popup — kích hoạt tải file CSV.
 
-2. **Content Script (Root Tab):**
+### Bước 3 — Bắt file CSV (Background Service Worker)
 
-- Scans the DOM structure of the affiliate list page.
+- `chrome.downloads.onCreated` phát hiện file CSV được tải xuống.
+- **Hủy ngay** việc lưu file xuống máy (`chrome.downloads.cancel`).
+- Đọc nội dung CSV trực tiếp từ ngữ cảnh trang (dùng `executeScript world: MAIN`) để đảm bảo có đầy đủ cookie phiên đăng nhập.
+- Parse CSV, lấy cột **"Tên sản phẩm"** và **"Link sản phẩm"** (`https://shopee.vn/product/...`).
 
-- Extracts a list of `Product Links` and sends this data array to the **Background Script**.
+### Bước 4 — Trích xuất video từng sản phẩm (Background)
 
-3. **Background Script (Service Worker):**
+Với mỗi sản phẩm trong danh sách:
 
-- Acts as an orchestrator.
+1. Mở tab nền (`active: false`) trỏ đến link `shopee.vn` của sản phẩm.
+2. Chờ trang SPA render xong (~3 giây).
+3. Inject script vào tab: click thumbnail video → chờ thẻ `<video>` xuất hiện (tối đa 8 giây).
+4. Lấy URL video (`.mp4`) — ưu tiên từ `video.src`, fallback scan `<script>` tags và HTML.
+5. Đóng tab nền, chuyển sang sản phẩm tiếp theo.
 
-- Browse through the list of links, opening each product in a **hidden tab** (`active: false`) to avoid interrupting the user's work.
+### Bước 5 — Lưu kết quả
 
-- Use `chrome.scripting.executeScript` to inject extraction logic into each new product tab.
+- Mỗi video được tải xuống vào thư mục **`Downloads/ShopeeAffiliateVideo/<TênSảnPhẩm>_N.mp4`**.
+- Sau khi xử lý toàn bộ, lưu file **`Downloads/ShopeeAffiliateVideo/shopee_videos_<timestamp>.json`** chứa danh sách `{ productName, videoUrl }`.
+- Popup hiển thị tiến trình theo thời gian thực và thông báo hoàn tất.
 
-4. **New Tabs (Target Products):**
-
-- Simulate user behavior (clicking on the video thumbnail).
-
-- Wait for the `<video>` tag to render and capture the `src` (original mp4 link).
-
-- Send the retrieved video data back to the **Background Script**.
-
-5. **Results & Download:**
-
-- The **Background Script** compiles the data after completing the loop.
-
-- Send the final result to the **Download API** to export the `.csv`/`.json` file to the user's computer.
-
-## 📁 Directory Structure
+## 📁 Cấu trúc thư mục
 
 ```text
 CrawlExtensions/
-├── manifest.json # Configures permissions and components of the Extension
-├── popup.html/js # Console and click event handling
-├── background.js # Service Worker for tab navigation and crawl flow management
-├── content.js # Script that interacts directly with Shopee's DOM
-└── icons/ # Contains icons displayed in the browser
+├── manifest.json   # Cấu hình quyền và các thành phần của Extension
+├── popup.html      # Giao diện người dùng
+├── popup.js        # Xử lý sự kiện click, lắng nghe tiến trình từ background
+├── background.js   # Service Worker: lắng nghe CSV, điều phối mở tab, tải video
+└── content.js      # Tự động click trên trang Shopee Affiliate
+```
+
+## ⚙️ Yêu cầu
+
+- Trình duyệt Chromium (Chrome, Edge, ...) hỗ trợ Manifest V3.
+- Đã đăng nhập tài khoản **Shopee Affiliate** tại `affiliate.shopee.vn`.
+- Đang ở trang **Product Offer** (có danh sách sản phẩm với checkbox và nút "Lấy link hàng loạt").
+
+## 📦 Cài đặt
+
+1. Mở `chrome://extensions/`.
+2. Bật **Developer mode**.
+3. Nhấn **Load unpacked** → chọn thư mục `CrawlExtensions/`.
+
+## 📂 Output
+
+| File | Mô tả |
+|------|-------|
+| `ShopeeAffiliateVideo/<TênSP>_N.mp4` | File video gốc của từng sản phẩm |
+| `ShopeeAffiliateVideo/shopee_videos_<ts>.json` | JSON chứa `productName` + `videoUrl` |

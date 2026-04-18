@@ -3,7 +3,7 @@
   "name": "Shopee Aff Crawler",
   "version": "2.0",
   "permissions": ["tabs", "storage", "downloads", "activeTab", "scripting"],
-  "host_permissions": ["https://affiliate.shopee.vn/*", "https://shopee.vn/*", "https://*.shopee.vn/*"],
+  "host_permissions": ["https://affiliate.shopee.vn/*", "https://shopee.vn/*", "https://*.shopee.vn/*", "https://www.veed.io/*"],
   "background": {
     "service_worker": "background.js"
   },
