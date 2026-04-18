@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body {
+      width: 260px;
+      padding: 15px;
+      font-family: Arial, sans-serif;
+    }
+    h3 {
+      font-size: 16px;
+      margin-bottom: 12px;
+      color: #ee4d2d;
+      text-align: center;
+    }
+    button {
+      width: 100%;
+      padding: 10px;
+      background-color: #ee4d2d;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: bold;
+      margin-bottom: 8px;
+      font-size: 13px;
+    }
+    button:hover {
+      background-color: #d73211;
+    }
+    button:disabled {
+      background-color: #ccc;
+      cursor: not-allowed;
+    }
+    #status {
+      margin-top: 8px;
+      font-size: 12px;
+      color: #555;
+      text-align: center;
+      min-height: 18px;
+    }
+    .btn-secondary {
+      background-color: #4CAF50;
+    }
+    .btn-secondary:hover {
+      background-color: #388E3C;
+    }
+  </style>
+</head>
+<body>
+  <h3>Shopee Aff Crawler</h3>
+  <button id="crawlProductsBtn">🛒 Crawl Product Links</button>
+  <button id="crawlVideosBtn" class="btn-secondary">🎬 Crawl Video Links</button>
+  <button id="crawlAllBtn" style="background-color:#1976D2;">📦 Crawl All (Products + Videos)</button>
+  <div id="status"></div>
+  <script src="popup.js"></script>
+</body>
+</html>
