@@ -44,7 +44,7 @@ Với mỗi sản phẩm trong danh sách:
 ## 📁 Cấu trúc thư mục
 
 ```text
-CrawlExtensions/
+ShopeeVideoCrawler/
 ├── manifest.json   # Cấu hình quyền và các thành phần của Extension
 ├── popup.html      # Giao diện người dùng
 ├── popup.js        # Xử lý sự kiện click, lắng nghe tiến trình từ background
@@ -62,7 +62,7 @@ CrawlExtensions/
 
 1. Mở `chrome://extensions/`.
 2. Bật **Developer mode**.
-3. Nhấn **Load unpacked** → chọn thư mục `CrawlExtensions/`.
+3. Nhấn **Load unpacked** → chọn thư mục `ShopeeVideoCrawler/`.
 
 ## 📂 Output
 

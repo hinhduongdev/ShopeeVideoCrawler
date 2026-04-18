@@ -92,13 +92,18 @@
   </style>
 </head>
 <body>
-  <h3>Shopee Aff Video Crawler</h3>
+  <h3>Shopee Video Crawler</h3>
   <div class="info">Mở trang Shopee Affiliate → Product Offer, sau đó nhấn nút bên dưới.</div>
   <div class="batch-row">
     <label for="batchSize">Số tab xử lý song song:</label>
     <input type="number" id="batchSize" min="1" max="10" value="5">
   </div>
+  <div class="batch-row">
+    <label for="maxPages">Số trang tối đa:</label>
+    <input type="number" id="maxPages" min="1" max="25" value="5">
+  </div>
   <button id="startBtn">🎬 Crawl & Tải Video</button>
+  <button id="pauseBtn" disabled style="background-color:#888;margin-top:0;">⏸ Tạm dừng</button>
   <div id="status"></div>
   <div id="progressWrap"><div id="progressBar"></div></div>
   <div id="progressLabel"></div>

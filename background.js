@@ -1,14 +1,69 @@
 // Service worker: monitors CSV downloads, extracts videos from product pages, saves to ShopeeAffiliateVideo/
 
+// Multi-page crawl session state
+let crawlSession = null;
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'START_CSV_MONITORING') {
+    crawlSession = {
+      tabId: message.tabId,
+      batchSize: message.batchSize || 5,
+      maxPages: message.maxPages || 5,
+      currentPage: 1,
+      allResults: [],
+      totalProductsProcessed: 0,
+      totalVideosFound: 0,
+      paused: false,
+      stopped: false,
+      resumeResolvers: [],
+      lastStatus: 'Đang chọn sản phẩm & lấy link...',
+      progress: null,  // { current, total }
+    };
+    chrome.action.setBadgeBackgroundColor({ color: '#ee4d2d' });
+    chrome.action.setBadgeText({ text: '...' });
     startCSVMonitoring(message.tabId, message.batchSize || 5);
     sendResponse({ ok: true });
+  }
+  if (message.type === 'PAUSE_CRAWL') {
+    if (crawlSession) {
+      crawlSession.paused = true;
+      crawlSession.lastStatus = `⏸ Tạm dừng tại: ${crawlSession.lastStatus}`;
+      console.log('[Background] Crawl paused by user.');
+    }
+    sendResponse({ ok: true });
+  }
+  if (message.type === 'RESUME_CRAWL') {
+    if (crawlSession) {
+      crawlSession.paused = false;
+      crawlSession.lastStatus = crawlSession.lastStatus.replace(/^⏸ Tạm dừng tại: /, '');
+      console.log('[Background] Crawl resumed by user.');
+      crawlSession.resumeResolvers.forEach(r => r());
+      crawlSession.resumeResolvers = [];
+    }
+    sendResponse({ ok: true });
+  }
+  if (message.type === 'GET_CRAWL_STATUS') {
+    sendResponse({
+      active: crawlSession !== null && !crawlSession.stopped,
+      paused: crawlSession?.paused || false,
+      lastStatus: crawlSession?.lastStatus || '',
+      progress: crawlSession?.progress || null,
+      batchSize: crawlSession?.batchSize || null,
+      maxPages: crawlSession?.maxPages || null,
+    });
   }
   return false;
 });
 
 // ===== CSV DOWNLOAD MONITORING =====
+
+// Wait while crawl is paused; resolves immediately if not paused
+function waitIfPaused() {
+  if (!crawlSession?.paused) return Promise.resolve();
+  return new Promise(resolve => {
+    crawlSession.resumeResolvers.push(resolve);
+  });
+}
 
 function startCSVMonitoring(tabId, batchSize = 5) {
   console.log('[Background] CSV download monitoring started');
@@ -95,7 +150,7 @@ async function handleCSVDownload(downloadItem, tabId, batchSize = 5) {
       csvText ? csvText.substring(0, 200) : '(empty)');
     // Re-start monitoring for the real CSV download
     console.log('[Background] Re-starting CSV monitoring...');
-    startCSVMonitoring(tabId);
+    startCSVMonitoring(tabId, crawlSession?.batchSize || batchSize);
     return;
   }
 
@@ -300,6 +355,13 @@ async function processProducts(products, batchSize = 5) {
   let completed = 0;
 
   for (let batchStart = 0; batchStart < total; batchStart += batchSize) {
+    if (crawlSession?.stopped) {
+      console.log('[Background] Crawl stopped, aborting remaining batches.');
+      break;
+    }
+    await waitIfPaused();
+    if (crawlSession?.stopped) break;
+
     const batch = products.slice(batchStart, batchStart + batchSize);
 
     console.log(`[Background] Starting batch ${batchStart + 1}–${batchStart + batch.length} of ${total} (batchSize=${batchSize})`);
@@ -353,10 +415,17 @@ async function processProducts(products, batchSize = 5) {
       }
 
       completed++;
+      const pct = Math.round((completed / total) * 100);
+      if (crawlSession) {
+        crawlSession.lastStatus = `🎬 [Trang ${crawlSession.currentPage}] ${completed}/${total}: ${product.name}`;
+        crawlSession.progress = { current: completed, total };
+      }
+      chrome.action.setBadgeText({ text: pct + '%' });
       chrome.runtime.sendMessage({
         type: 'CRAWL_PROGRESS',
         current: completed,
         total,
+        page: crawlSession?.currentPage || 1,
         productName: product.name,
       }).catch(() => {});
     }));
@@ -367,9 +436,92 @@ async function processProducts(products, batchSize = 5) {
     }
   }
 
-  // Save JSON with results
-  if (results.length > 0) {
-    const jsonContent = JSON.stringify(results, null, 2);
+  // Accumulate into session
+  if (crawlSession) {
+    crawlSession.allResults.push(...results);
+    crawlSession.totalProductsProcessed += total;
+    crawlSession.totalVideosFound += results.length;
+  }
+
+  console.log(`[Background] Page ${crawlSession?.currentPage || 1} done. ${results.length}/${total} videos found.`);
+
+  // Stop requested — finalize immediately
+  if (crawlSession?.stopped) {
+    return finalizeCrawl();
+  }
+
+  // Try to advance to next page, or finalize
+  await tryAdvancePage();
+}
+
+async function tryAdvancePage() {
+  if (!crawlSession) return finalizeCrawl();
+
+  const { tabId, batchSize, maxPages, currentPage } = crawlSession;
+
+  if (currentPage >= maxPages) {
+    console.log(`[Background] Reached max pages (${maxPages}). Finalizing.`);
+    return finalizeCrawl();
+  }
+
+  // Click next page button if available
+  let clickResult;
+  try {
+    const scriptResults = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => {
+        const nextBtn = document.querySelector('.page-item.page-next');
+        if (!nextBtn || nextBtn.classList.contains('disabled')) return { clicked: false };
+        const activePage = document.querySelector('.page-item.page-page.active');
+        const pg = activePage ? parseInt(activePage.textContent.trim()) : 0;
+        nextBtn.click();
+        return { clicked: true, page: pg };
+      },
+    });
+    clickResult = scriptResults?.[0]?.result;
+  } catch (e) {
+    console.error('[Background] Could not check next page:', e.message);
+    return finalizeCrawl();
+  }
+
+  if (!clickResult?.clicked) {
+    console.log('[Background] No next page available. Finalizing.');
+    return finalizeCrawl();
+  }
+
+  crawlSession.currentPage = (clickResult.page || currentPage) + 1;
+  console.log(`[Background] Advancing to page ${crawlSession.currentPage}...`);
+
+  chrome.runtime.sendMessage({
+    type: 'PAGE_ADVANCE',
+    page: crawlSession.currentPage,
+  }).catch(() => {});
+
+  // Wait for SPA to render the new page
+  await new Promise(r => setTimeout(r, 3000));
+
+  // Re-start CSV monitoring then re-inject content script
+  startCSVMonitoring(tabId, batchSize);
+
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ['content.js'],
+    });
+  } catch (e) {
+    console.error('[Background] Could not re-inject content.js:', e.message);
+    finalizeCrawl();
+  }
+}
+
+function finalizeCrawl() {
+  chrome.action.setBadgeText({ text: '' });
+
+  const session = crawlSession;
+  crawlSession = null;
+
+  if (session && session.allResults.length > 0) {
+    const jsonContent = JSON.stringify(session.allResults, null, 2);
     const dataUrl = 'data:application/json;base64,' + btoa(unescape(encodeURIComponent(jsonContent)));
     chrome.downloads.download({
       url: dataUrl,
@@ -378,14 +530,20 @@ async function processProducts(products, batchSize = 5) {
     });
   }
 
-  // Notify completion
+  const totalProducts = session?.totalProductsProcessed || 0;
+  const totalVideos = session?.totalVideosFound || 0;
+  const totalPages = session?.currentPage || 1;
+  const stopped = session?.stopped || false;
+
   chrome.runtime.sendMessage({
     type: 'CRAWL_COMPLETE',
-    totalProducts: total,
-    totalVideos: results.length,
+    totalProducts,
+    totalVideos,
+    totalPages,
+    stopped,
   }).catch(() => {});
 
-  console.log(`[Background] Done. ${results.length}/${total} videos downloaded.`);
+  console.log(`[Background] Crawl ${stopped ? 'stopped' : 'complete'}. ${totalVideos}/${totalProducts} videos across ${totalPages} page(s).`);
 }
 
 // Open product page directly (shopee.vn), click thumbnail, extract ONE video
