@@ -1,5 +1,6 @@
 const statusEl = document.getElementById('status');
 const startBtn = document.getElementById('startBtn');
+const batchSizeInput = document.getElementById('batchSize');
 const progressWrap = document.getElementById('progressWrap');
 const progressBar = document.getElementById('progressBar');
 const progressLabel = document.getElementById('progressLabel');
@@ -37,7 +38,8 @@ startBtn.addEventListener('click', async () => {
 
   try {
     // 1. Tell background to start monitoring for CSV downloads
-    await chrome.runtime.sendMessage({ type: 'START_CSV_MONITORING', tabId: tab.id });
+    const batchSize = Math.max(1, Math.min(10, parseInt(batchSizeInput.value, 10) || 5));
+    await chrome.runtime.sendMessage({ type: 'START_CSV_MONITORING', tabId: tab.id, batchSize });
 
     // 2. Inject content script to automate button clicks
     await chrome.scripting.executeScript({

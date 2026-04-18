@@ -2,7 +2,7 @@
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'START_CSV_MONITORING') {
-    startCSVMonitoring(message.tabId);
+    startCSVMonitoring(message.tabId, message.batchSize || 5);
     sendResponse({ ok: true });
   }
   return false;
@@ -10,7 +10,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 // ===== CSV DOWNLOAD MONITORING =====
 
-function startCSVMonitoring(tabId) {
+function startCSVMonitoring(tabId, batchSize = 5) {
   console.log('[Background] CSV download monitoring started');
 
   const handler = (downloadItem) => {
@@ -22,7 +22,7 @@ function startCSVMonitoring(tabId) {
     chrome.downloads.onCreated.removeListener(handler);
     clearTimeout(timeoutId);
 
-    handleCSVDownload(downloadItem, tabId);
+    handleCSVDownload(downloadItem, tabId, batchSize);
   };
 
   chrome.downloads.onCreated.addListener(handler);
@@ -37,7 +37,7 @@ function startCSVMonitoring(tabId) {
   }, 30000);
 }
 
-async function handleCSVDownload(downloadItem, tabId) {
+async function handleCSVDownload(downloadItem, tabId, batchSize = 5) {
   const url = downloadItem.url;
   const downloadId = downloadItem.id;
   let csvText = null;
@@ -114,7 +114,7 @@ async function handleCSVDownload(downloadItem, tabId) {
     type: 'CSV_PARSED', count: products.length,
   }).catch(() => {});
 
-  processProducts(products);
+  processProducts(products, batchSize);
 }
 
 function waitForDownloadComplete(downloadId) {
@@ -294,69 +294,75 @@ function uploadToVeed(videoUrl, productName) {
   });
 }
 
-async function processProducts(products) {
+async function processProducts(products, batchSize = 5) {
   const results = [];
   const total = products.length;
+  let completed = 0;
 
-  for (let i = 0; i < total; i++) {
-    const product = products[i];
-    console.log(`[Background] Processing ${i + 1}/${total}: ${product.name}`);
+  for (let batchStart = 0; batchStart < total; batchStart += batchSize) {
+    const batch = products.slice(batchStart, batchStart + batchSize);
 
-    // Broadcast progress (popup may or may not be listening)
-    chrome.runtime.sendMessage({
-      type: 'CRAWL_PROGRESS',
-      current: i + 1,
-      total,
-      productName: product.name,
-    }).catch(() => {});
+    console.log(`[Background] Starting batch ${batchStart + 1}–${batchStart + batch.length} of ${total} (batchSize=${batchSize})`);
 
-    try {
-      let videoUrl = await openAndExtractVideo(product.link);
+    await Promise.all(batch.map(async (product, batchIdx) => {
+      const globalIdx = batchStart + batchIdx;
+      console.log(`[Background] Processing ${globalIdx + 1}/${total}: ${product.name}`);
 
-      // Retry once if no video found on first attempt
-      if (!videoUrl) {
-        console.log(`[Background] Retrying ${product.name}...`);
-        await new Promise(r => setTimeout(r, 2000));
-        videoUrl = await openAndExtractVideo(product.link);
+      try {
+        let videoUrl = await openAndExtractVideo(product.link);
+
+        // Retry once if no video found on first attempt
+        if (!videoUrl) {
+          console.log(`[Background] Retrying ${product.name}...`);
+          await new Promise(r => setTimeout(r, 2000));
+          videoUrl = await openAndExtractVideo(product.link);
+        }
+
+        if (videoUrl) {
+          results.push({
+            productName: product.name,
+            sku: product.sku,
+            price: product.price,
+            affLink: product.affLink,
+            videoUrl: videoUrl,
+          });
+
+          // Download the video file
+          const safeName = product.name
+            .replace(/[^a-zA-Z0-9\u00C0-\u024F\u1E00-\u1EFF\- ]/g, '')
+            .trim()
+            .substring(0, 80) || 'video';
+          const filename = `ShopeeAffiliateVideo/${safeName}_${globalIdx + 1}.mp4`;
+
+          chrome.downloads.download({
+            url: videoUrl,
+            filename: filename,
+            saveAs: false,
+            conflictAction: 'uniquify',
+          });
+          console.log(`[Background] Downloaded video: ${filename}`);
+
+          // Upload to veed.io
+          //await uploadToVeed(videoUrl, product.name);
+          //await new Promise(r => setTimeout(r, 2000));
+        } else {
+          console.log(`[Background] No video found for: ${product.name}`);
+        }
+      } catch (err) {
+        console.error(`[Background] Error processing ${product.name}:`, err.message);
       }
 
-      if (videoUrl) {
-        results.push({
-          productName: product.name,
-          sku: product.sku,
-          price: product.price,
-          affLink: product.affLink,
-          videoUrl: videoUrl,
-        });
+      completed++;
+      chrome.runtime.sendMessage({
+        type: 'CRAWL_PROGRESS',
+        current: completed,
+        total,
+        productName: product.name,
+      }).catch(() => {});
+    }));
 
-        // Download the video file
-        const safeName = product.name
-          .replace(/[^a-zA-Z0-9\u00C0-\u024F\u1E00-\u1EFF\- ]/g, '')
-          .trim()
-          .substring(0, 80) || 'video';
-        const filename = `ShopeeAffiliateVideo/${safeName}_${i + 1}.mp4`;
-
-        chrome.downloads.download({
-          url: videoUrl,
-          filename: filename,
-          saveAs: false,
-          conflictAction: 'uniquify',
-        });
-        console.log(`[Background] Downloaded video: ${filename}`);
-
-        // Upload to veed.io
-        //await uploadToVeed(videoUrl, product.name);
-        // Space out veed.io tab openings
-        //await new Promise(r => setTimeout(r, 2000));
-      } else {
-        console.log(`[Background] No video found for: ${product.name}`);
-      }
-    } catch (err) {
-      console.error(`[Background] Error processing ${product.name}:`, err.message);
-    }
-
-    // Delay between products to avoid rate-limiting
-    if (i < total - 1) {
+    // Delay between batches to avoid rate-limiting
+    if (batchStart + batchSize < total) {
       await new Promise(r => setTimeout(r, 1500));
     }
   }
